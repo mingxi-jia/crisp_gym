@@ -1,0 +1,36 @@
+control_frequency: 30.0
+gripper_enabled: true
+gripper_continuous_control: false
+gripper_threshold: 0.5
+
+cartesian_control_param_config: null
+joint_control_param_config: null
+
+robot_config:
+  robot_type: "franka"
+
+gripper_config:
+  min_value: 0.0
+  max_value: 1.0
+  command_topic: /gripper/gripper_position_controller/commands
+  joint_state_topic: /gripper/joint_states
+  reboot_service: reboot_gripper
+  enable_torque_service: dynamixel_hardware_interface/set_dxl_torque
+  index: 0
+  publish_frequency: 30.0
+  max_joint_delay: 1.0
+  max_delta: 1.0
+
+camera_configs:
+  - camera_name: "dave"
+    camera_frame: "dave_link"
+    resolution: [480, 640]
+    camera_color_image_topic: "/dave/color/image_raw"
+    camera_color_info_topic: "/dave/color/camera_info"
+  - camera_name: "tim"
+    camera_frame: "tim_link"
+    resolution: [480, 640]
+    camera_color_image_topic: "/tim/color/image_rect_raw"
+    camera_color_info_topic: "/tim/color/camera_info"
+
+sensor_configs: []

@@ -108,7 +108,7 @@ try:
 
     env = make_env(
         env_type="no_cam_franka",
-        config_path="crisp_gym/config/envs/no_cam_franka.yaml",
+        config_path="crisp_gym/config/envs/tigress_franka.yaml",
         control_type="joint",
         namespace=args.follower_namespace,
         joint_control_param_config=joint_control_param_config,
