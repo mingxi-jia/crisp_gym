@@ -12,7 +12,7 @@ import numpy as np
 import torch
 from lerobot.configs.train import TrainPipelineConfig
 from lerobot.policies.factory import get_policy_class
-
+from crisp_gym.teleop.gello import Gello
 from crisp_gym.util.control_type import ControlType
 
 if TYPE_CHECKING:
@@ -107,6 +107,68 @@ def make_teleop_fn(env: ManipulatorBaseEnv, leader: TeleopRobot) -> Callable:
 
     return _fn
 
+def make_gello_fn(env: ManipulatorBaseEnv, gello: Gello) -> Callable:
+    """Create a teleoperation function for the leader robot.
+
+    This function returns a Callable that can be used to control the leader robot
+    in a teleoperation manner. It computes the action based on the difference
+    between the current and previous end-effector pose or joint values, and
+    updates the gripper value based on the leader gripper's value.
+
+    Args:
+        env (ManipulatorBaseEnv): The environment in which the leader robot operates.
+        leader (TeleopRobot): The teleoperation leader robot instance.
+
+    Returns:
+        Callable: A function that, when called, performs a step in the environment
+        and returns the observation and action taken.
+    """
+    prev_joint = gello.get_joint_state()
+    first_step = True
+
+    def _fn() -> tuple:
+        """Teleoperation function to be called in each step.
+
+        This function computes the action based on the current end-effector pose
+        or joint values of the leader robot, updates the gripper value, and steps
+        the environment.
+
+        Returns:
+            tuple: A tuple containing the observation from the environment and the action taken.
+        """
+        nonlocal prev_joint, first_step
+        if first_step:
+            first_step = False
+            prev_joint = gello.get_joint_state()
+            return None, None
+
+        joint = gello.get_joint_state()
+        action_joint = joint[:7] - prev_joint[:7]
+        action_joint = np.clip(action_joint * 2, -0.05, 0.05)
+        prev_joint = joint
+
+        gripper = joint[-1]
+
+        action = None
+        if env.ctrl_type is ControlType.CARTESIAN:
+            raise NotImplementedError("Gello does not support cartesian control.")
+        elif env.ctrl_type is ControlType.JOINT:
+            action = np.concatenate(
+                [
+                    action_joint,
+                    [gripper],
+                ]
+            )
+        else:
+            raise ValueError(
+                f"Unsupported control type: {env.ctrl_type}. "
+                "Supported types are 'cartesian' and 'joint'."
+            )
+
+        obs, *_ = env.step(action, block=False)
+        return obs, action
+
+    return _fn
 
 def inference_worker(
     conn: Connection,

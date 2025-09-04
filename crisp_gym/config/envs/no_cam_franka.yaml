@@ -1,7 +1,7 @@
 control_frequency: 30.0
-gripper_enabled: false
-gripper_continuous_control: true
-gripper_threshold: 0.1
+gripper_enabled: true
+gripper_continuous_control: false
+gripper_threshold: 0.5
 
 cartesian_control_param_config: null
 joint_control_param_config: null
@@ -10,8 +10,16 @@ robot_config:
   robot_type: "franka"
 
 gripper_config:
-  min_value: 0
-  max_value: 1
+  min_value: 0.0
+  max_value: 1.0
+  command_topic: /gripper/gripper_position_controller/commands
+  joint_state_topic: /gripper/joint_states
+  reboot_service: reboot_gripper
+  enable_torque_service: dynamixel_hardware_interface/set_dxl_torque
+  index: 0
+  publish_frequency: 30.0
+  max_joint_delay: 1.0
+  max_delta: 1.0
 
 camera_configs: []
 sensor_configs: []

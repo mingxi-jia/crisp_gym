@@ -32,7 +32,7 @@ import gymnasium as gym
 import numpy as np
 import rclpy
 from crisp_py.camera import Camera
-from crisp_py.gripper import Gripper
+from crisp_py.gripper import Gripper, GripperConfig
 from crisp_py.robot import Pose, Robot
 from crisp_py.sensors.sensor import make_sensor
 from numpy.typing import NDArray
@@ -116,6 +116,7 @@ class ManipulatorBaseEnv(gym.Env):
                 raise FileNotFoundError(
                     f"Joint control parameter config file not found: {self.config.joint_control_param_config}"
                 )
+            print(f"Joint control config found in {self.config.joint_control_param_config}")
             self.robot.joint_controller_parameters_client.load_param_config(
                 file_path=self.config.joint_control_param_config
             )
@@ -200,6 +201,7 @@ class ManipulatorBaseEnv(gym.Env):
             # If continuous control is enabled, set the gripper value directly
             self.gripper.set_target(action)
         else:
+            # print(self.gripper.is_open(open_threshold=self.config.gripper_threshold))
             if action >= self.config.gripper_threshold and self.gripper.is_open(
                 open_threshold=self.config.gripper_threshold
             ):
@@ -453,6 +455,8 @@ class ManipulatorJointEnv(ManipulatorBaseEnv):
         )
         # assert self.action_space.contains(action), f"Action {action} is not in the action space {self.action_space}"
         # target_joint = (self.robot.target_joint + action[:, self.num_joints] + np.pi) % (2 * np.pi) - np.pi
+        # print(f"target_joint: {self.robot.target_joint}")
+        # print(f"action[: self.num_joints]: {action[: self.num_joints]}")
         target_joint = self.robot.target_joint + action[: self.num_joints]
 
         self.robot.set_target_joint(target_joint)
@@ -502,3 +506,204 @@ def make_env(
         raise ValueError(
             f"Unsupported control type: {control_type}. Supported types are: 'cartesian', 'joint'"
         )
+
+def test_cartesian_controller():
+    import time
+    
+    print("Testing manipulator movement...")
+    
+    # Create environment with parameter config disabled to avoid loading issues
+    env = make_env(
+        env_type="no_cam_franka", 
+        control_type="cartesian",
+        namespace="",
+        joint_control_param_config="config/joint_control_custom.yaml",
+        cartesian_control_param_config="config/default_cartesian_impedance.yaml",
+        
+    )
+    
+    try:
+        print("Resetting environment...")
+        obs, info = env.reset()
+        
+        print("Moving robot home...")
+        env.home()
+        
+        print("Switching to cartesian impedance controller...")
+        env.switch_controller("cartesian")
+        time.sleep(1.0)  # Give controller time to switch
+        
+        print("Current robot state:")
+        print(f"  End-effector position: {obs['cartesian'][:3]}")
+        print(f"  Joint values: {obs['joint']}")
+        print(f"  Gripper state: {obs['gripper']}")
+        
+        print("Starting movement test with controller active...")
+        for i in range(100):  # Reduced iterations for testing
+            # Small sinusoidal cartesian movements
+            action = np.array([
+                np.sin(i * 0.2) * 0.01,  # dx - small sinusoidal movement (reduced amplitude)
+                np.cos(i * 0.2) * 0.01,  # dy - small cosine movement (reduced amplitude)
+                0.0,                     # dz - keep z constant
+                0.0, 0.0, 0.0,          # no rotation
+                0.5                      # gripper half open
+            ])
+            
+            obs, reward, terminated, truncated, info = env.step(action)
+            
+            # Print current state every 10 steps
+            if i % 10 == 0:
+                print(f"Step {i}: End-effector position: {obs['cartesian'][:3]}")
+                print(f"         Joint values: {obs['joint'][:3]}...")  # Just first 3 joints
+                
+            time.sleep(0.1)  # Faster execution
+            
+            if terminated or truncated:
+                print(f"Episode ended at step {i}")
+                break
+                
+    except KeyboardInterrupt:
+        print("\nTest interrupted by user")
+    except Exception as e:
+        print(f"Error during test: {e}")
+    finally:
+        print("Closing environment...")
+        env.close()
+        print("Test complete!")
+
+def test_joint_controller():
+    """Test joint space control with the manipulator environment."""
+    import time
+    
+    print("Testing joint controller movement...")
+    
+    # Create joint environment with custom config
+    env = make_env(
+        env_type="no_cam_franka", 
+        config_path="crisp_gym/config/envs/no_cam_franka.yaml",
+        control_type="joint",
+        namespace="",
+        joint_control_param_config="config/joint_control_custom.yaml",
+    )
+    
+    try:
+        print("Resetting environment...")
+        obs, _ = env.reset()
+        
+        print("Moving robot home...")
+        env.home()
+        
+        print("Switching to joint controller...")
+        env.switch_controller("joint")
+        time.sleep(1.0)  # Give controller time to switch
+        
+        print("Current robot state:")
+        print(f"  End-effector position: {obs['cartesian'][:3]}")
+        print(f"  Joint values: {obs['joint']}")
+        print(f"  Gripper state: {obs['gripper']}")
+        
+        # Get initial joint configuration
+        initial_joints = obs['joint'].copy()
+        print(f"\nInitial joints: {initial_joints}")
+        
+        print("Starting joint movement test...")
+        for i in range(100):
+            # Small sinusoidal joint movements on different joints
+            joint_deltas = np.zeros(7)  # 7 joints
+            
+            # Move different joints with different frequencies
+            joint_deltas[0] = np.sin(i * 0.1) * 0.02  # Joint 1
+            joint_deltas[1] = np.cos(i * 0.1) * 0.02  # Joint 2
+            joint_deltas[6] = np.sin(i * 0.2) * 0.01  # Joint 7
+            
+            # Add gripper action
+            action = np.concatenate([joint_deltas, [0.5]])  # gripper half open
+            
+            obs, _, terminated, truncated, _ = env.step(action)
+            
+            # Print current state every 20 steps
+            if i % 20 == 0:
+                current_joints = obs['joint']
+                joint_change = current_joints - initial_joints
+                print(f"Step {i}:")
+                print(f"  Joint values: {current_joints[:3]}")  # First 3 joints
+                print(f"  Change from start: {joint_change[:3]}")
+                print(f"  End-effector pos: {obs['cartesian'][:3]}")
+                
+            time.sleep(0.1)
+            
+            if terminated or truncated:
+                print(f"Episode ended at step {i}")
+                break
+                
+        print("\nReturning to home position...")
+        env.home()
+        
+    except KeyboardInterrupt:
+        print("\nTest interrupted by user")
+    except Exception as e:
+        print(f"Error during test: {e}")
+    finally:
+        print("Closing environment...")
+        env.close()
+        print("Joint controller test complete!")
+
+def test_joint_sign():
+    """Test joint space control with the manipulator environment."""
+    import time
+    
+    print("Testing joint controller movement...")
+    
+    # Create joint environment with custom config
+    env = make_env(
+        env_type="no_cam_franka", 
+        control_type="joint",
+        namespace="",
+        joint_control_param_config="config/joint_control_custom.yaml",
+    )
+    
+    try:
+        print("Resetting environment...")
+        obs, _ = env.reset()
+        
+        print("Moving robot home...")
+        env.home()
+        
+        print("Switching to joint controller...")
+        env.switch_controller("joint")
+        time.sleep(1.0)  # Give controller time to switch
+        
+        print("Current robot state:")
+        print(f"  End-effector position: {obs['cartesian'][:3]}")
+        print(f"  Joint values: {obs['joint']}")
+        print(f"  Gripper state: {obs['gripper']}")
+        
+        # Get initial joint configuration
+        initial_joints = obs['joint'].copy()
+        print(f"\nInitial joints: {initial_joints}")
+        
+        print("Starting joint movement test...")
+        for joint_idx in range(7):
+            for i in range(50):
+                joint_deltas = np.zeros(7)  # 7 joints
+                joint_deltas[-1] = 0.01  # Joint 1
+                action = np.concatenate([joint_deltas, [0.5]])  # gripper half open
+                obs, _, terminated, truncated, _ = env.step(action)
+                print(f"  Joint values: {obs['joint']}")  # First 3 joints
+                time.sleep(0.1)
+            
+                
+        print("\nReturning to home position...")
+        env.home()
+        
+    except KeyboardInterrupt:
+        print("\nTest interrupted by user")
+    except Exception as e:
+        print(f"Error during test: {e}")
+    finally:
+        print("Closing environment...")
+        env.close()
+        print("Joint controller test complete!")
+
+if __name__ == "__main__":
+    test_joint_controller()

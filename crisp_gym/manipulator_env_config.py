@@ -119,8 +119,8 @@ class FrankaEnvConfig(ManipulatorEnvConfig, ABC):
 class NoCamFrankaEnvConfig(FrankaEnvConfig):
     """Franka Gym Environment Configuration."""
 
-    gripper_continuous_control: bool = True
-    gripper_enabled: bool = False
+    gripper_continuous_control: bool = False
+    gripper_enabled: bool = True
 
     gripper_config: GripperConfig | None = field(
         default_factory=lambda: GripperConfig(min_value=0, max_value=1)
@@ -305,10 +305,13 @@ def make_env_config(
                 f"Unsupported environment type: {env_type}, available types are {list(STRING_TO_CONFIG.keys())} "
                 f"and discovered YAML configs: {list(yaml_configs.keys())}"
             )
-
+    
     if config_path:
         config_path = Path(config_path) if isinstance(config_path, str) else config_path
+        print(f"using config in {config_path}")
         return config_class.from_yaml(config_path, **overrides)
+    else:
+        print(f"no config found. Using default at crisp_gym/manipulator_env_config.py")
 
     return config_class(**overrides)
 
@@ -328,7 +331,7 @@ def discover_yaml_configs(config_dirs: list[Path] | None = None) -> Dict[str, Pa
 
         local_config_dir = Path(__file__).parent / "config" / "envs"
         config_dirs = [local_config_dir, CRISP_CONFIG_PATH / "envs"]
-
+    # print(config_dirs)
     discovered_configs = {}
     for config_dir in config_dirs:
         if config_dir.exists():
