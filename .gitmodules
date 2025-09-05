@@ -1,0 +1,4 @@
+[submodule "third_party/gello_software"]
+	path = third_party/gello_software
+	url = git@github.com:SaulBatman/gello_software.git
+	branch = tigress
